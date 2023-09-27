@@ -52,6 +52,9 @@ func (driver *Driver) consume() error {
 		}
 		body := make(map[string]interface{})
 		if err := json.Unmarshal(line, &body); err != nil {
+            if driver.config.SkipError {
+                continue
+            }
 			return err
 		}
 		for k, v := range extractJson {

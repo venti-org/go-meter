@@ -6,6 +6,7 @@ type DriverConfig struct {
 	Path          string
 	Api           string
 	ExtraJsonPath string
+    SkipError     bool
 }
 
 type ClientConfig struct {
