@@ -1,9 +1,10 @@
 package gmeter
 
 import (
-	"bytes"
-	"encoding/json"
+	"crypto/tls"
 	"net/http"
+	"net/url"
+	"time"
 )
 
 type Client struct {
@@ -13,42 +14,42 @@ type Client struct {
 	meter  *Meter
 }
 
-func NewClient(id int, config *ClientConfig) *Client {
+func NewClient(id int, config *ClientConfig) (*Client, error) {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if len(config.Proxy) != 0 {
+		if proxyUrl, err := url.Parse(config.Proxy); err != nil {
+			return nil, err
+		} else {
+			transport.Proxy = http.ProxyURL(proxyUrl)
+		}
+	}
 	return &Client{
-		id:     id,
-		client: &http.Client{},
+		id: id,
+		client: &http.Client{
+			Transport: transport,
+		},
 		config: config,
 		meter:  NewMeter(id),
-	}
+	}, nil
 }
 
 func (Client *Client) GetMeter() *Meter {
 	return Client.meter
 }
 
-func (client *Client) Run(bodys chan map[string]interface{}) {
+func (client *Client) Run(requests chan *Request) {
 	for i := 0; i < client.config.Count; i++ {
-		body := <-bodys
-		if body == nil {
+		request := <-requests
+		if request == nil {
 			break
 		}
 		client.meter.Start()
-		result, err := client.post(client.config.Api, body)
-		client.meter.Finish(result, err)
-	}
-}
-
-func (client *Client) post(api string, body map[string]interface{}) (map[string]interface{}, error) {
-	if data, err := json.Marshal(body); err != nil {
-		return nil, err
-	} else if resp, err := client.client.Post(api, "application/json", bytes.NewReader(data)); err != nil {
-		return nil, err
-	} else {
-		defer resp.Body.Close()
-		result := make(map[string]interface{})
-		if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, err
-		}
-		return result, nil
+		start := time.Now()
+		response, err := client.client.Do(request.Req)
+		res := NewResponse(request, response, err)
+		res.Cost = time.Since(start).Milliseconds()
+		client.meter.Finish(res)
 	}
 }

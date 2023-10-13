@@ -7,6 +7,9 @@ import (
 
 type Meter struct {
 	id           int
+	children     int
+	start        time.Time
+	finish       time.Time
 	lastStart    time.Time
 	successItems []int64
 	failedItems  []int64
@@ -15,46 +18,58 @@ type Meter struct {
 
 func NewMeter(id int) *Meter {
 	return &Meter{
-		id: id,
+		id:    id,
+		start: time.Now(),
 	}
+}
+
+func (meter *Meter) getClientCount() int {
+	n := 0
+	if !meter.lastStart.IsZero() {
+		n += 1
+	}
+	return n + meter.children
 }
 
 func (meter *Meter) Start() {
 	meter.lastStart = time.Now()
 }
 
-func (meter *Meter) Finish(result map[string]interface{}, err error) {
+func (meter *Meter) Finish(res *Response) {
+	meter.finish = time.Now()
 	meter.finishNum += 1
 	ms := time.Since(meter.lastStart).Milliseconds()
-	if err != nil {
+	if res.Error != nil {
 		meter.failedItems = append(meter.failedItems, ms)
-		meter.Failed(err)
+		meter.Failed(res)
 	} else {
 		meter.successItems = append(meter.successItems, ms)
-		meter.Success(result)
+		meter.Success(res)
 	}
 }
 
-func (meter *Meter) Success(result map[string]interface{}) {
+func (meter *Meter) Success(res *Response) {
+	fmt.Println(res.String())
 }
 
-func (meter *Meter) Failed(err error) {
+func (meter *Meter) Failed(res *Response) {
+	ErrPrintln(res.String())
 }
 
 func (meter *Meter) Extend(other *Meter) {
 	if other == nil || other.finishNum == 0 {
 		return
 	}
+	meter.children += other.getClientCount()
+	if other.start.Before(meter.start) {
+		meter.start = other.start
+	}
+	if other.finish.After(meter.finish) {
+		meter.finish = other.finish
+	}
 	meter.finishNum += other.finishNum
 	meter.successItems = append(meter.successItems, other.successItems...)
 	meter.failedItems = append(meter.failedItems, other.failedItems...)
-}
-
-func div(num1 int64, num2 int64) float64 {
-	if num2 == 0 {
-		return 0
-	}
-	return float64(num1) / float64(num2)
 }
 
 func (meter *Meter) Summary() {
@@ -62,22 +77,24 @@ func (meter *Meter) Summary() {
 		return
 	}
 	successCost := sum(meter.successItems)
+	minSuccessCost := minWithDefault(0, meter.successItems...)
+	maxSuccessCost := maxWithDefault(0, meter.successItems...)
 	failedCost := sum(meter.failedItems)
+	minFailedCost := minWithDefault(0, meter.failedItems...)
+	maxFailedCost := maxWithDefault(0, meter.failedItems...)
 
-	fmt.Printf("client: %v\n", meter.id)
+	costMs := meter.finish.Sub(meter.start).Milliseconds()
 
-	fmt.Printf("    all cost %vms process %v request averagy %vms\n",
-		successCost+failedCost, meter.finishNum, div(successCost+failedCost, int64(meter.finishNum)))
-	fmt.Printf("    success cost %vms process %v request averagy %vms\n",
-		successCost, len(meter.successItems), div(successCost, int64(len(meter.successItems))))
-	fmt.Printf("    failed cost %vms process %v request averagy %vms\n",
-		failedCost, len(meter.failedItems), div(failedCost, int64(len(meter.failedItems))))
-}
+	ErrPrintf("client%v: (%v clients real cost %vms process %v request qps %.2f\n", meter.id,
+		meter.getClientCount(), costMs, meter.finishNum, div(int64(meter.finishNum)*1000, costMs))
 
-func sum(nums []int64) int64 {
-	sum := int64(0)
-	for _, num := range nums {
-		sum += num
-	}
-	return sum
+	ErrPrintf("    all cost %vms process %v request averagy %vms max %vms min %vms\n",
+		successCost+failedCost, meter.finishNum, div(successCost+failedCost, int64(meter.finishNum)),
+		max(maxSuccessCost, maxFailedCost), min(minSuccessCost, minFailedCost))
+	ErrPrintf("    success cost %vms process %v request averagy %vms max %vms min %vms\n",
+		successCost, len(meter.successItems), div(successCost, int64(len(meter.successItems))),
+		maxSuccessCost, minSuccessCost)
+	ErrPrintf("    failed cost %vms process %v request averagy %vms max %vms min %vms\n",
+		failedCost, len(meter.failedItems), div(failedCost, int64(len(meter.failedItems))),
+		maxFailedCost, minFailedCost)
 }

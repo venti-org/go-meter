@@ -3,14 +3,15 @@
 ## build
 
 ```sh
-go install github.com/venti-org/go-meter/cmd/gmeter@latest
+CGO_ENABLED=0 go install github.com/venti-org/go-meter/cmd/gmeter@latest
 # or local build
-go build ./cmd/gmeter
+CGO_ENABLED=0 go build ./cmd/gmeter
 ```
 
 ## 
 
 ```sh
-./gmeter -p request.json --extra-path extra.json -c 12 -n 100 --api http://127.0.0.1:8089/api/v1/parser
+./gmeter get -u http://httpbin.org/get -c 2 -n 4
+# 12 client send 12 * 10 = 120 requests
+./gmeter post -u http://httpbin.org/post --bodies-path request.json -c 12 -n 10
 ```
-
