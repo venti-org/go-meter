@@ -9,7 +9,9 @@ import (
 )
 
 func ErrPrintln(s string) {
-	os.Stderr.WriteString(s)
+	if len(s) != 0 {
+		os.Stderr.WriteString(s)
+	}
 	os.Stderr.WriteString("\n")
 }
 

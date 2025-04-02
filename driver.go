@@ -56,7 +56,7 @@ func (driver *Driver) consume() error {
 
 func (driver *Driver) Run() error {
 	var clients []*Client
-	for i := 0; i < driver.config.Concurrency; i++ {
+	for i := range driver.config.Concurrency {
 		if client, err := NewClient(i+1, &driver.config.ClientConfig); err != nil {
 			return err
 		} else {
@@ -71,7 +71,7 @@ func (driver *Driver) Run() error {
 	}()
 
 	wg := sync.WaitGroup{}
-	for i := 0; i < len(clients); i++ {
+	for i := range clients {
 		wg.Add(1)
 		go func(client *Client) {
 			defer wg.Done()
@@ -79,11 +79,10 @@ func (driver *Driver) Run() error {
 		}(clients[i])
 	}
 	wg.Wait()
-	for i := 0; i < len(clients); i++ {
-		meter := clients[i].GetMeter()
+	for _, client := range clients {
+		meter := client.GetMeter()
 		driver.meter.Extend(meter)
 		meter.Summary()
-		ErrPrintln("")
 	}
 	driver.meter.Summary()
 	return nil

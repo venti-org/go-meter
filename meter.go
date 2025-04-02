@@ -97,4 +97,5 @@ func (meter *Meter) Summary() {
 	ErrPrintf("    failed cost %vms process %v request averagy %vms max %vms min %vms\n",
 		failedCost, len(meter.failedItems), div(failedCost, int64(len(meter.failedItems))),
 		maxFailedCost, minFailedCost)
+	ErrPrintln("")
 }

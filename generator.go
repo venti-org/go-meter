@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -99,14 +100,18 @@ type FileGenerator struct {
 }
 
 func NewFileGenerator(path string) (*FileGenerator, error) {
+	if path == "-" {
+		return &FileGenerator{
+			reader: bufio.NewReader(os.Stdin),
+		}, nil
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	reader := bufio.NewReader(file)
 	return &FileGenerator{
 		file:   file,
-		reader: reader,
+		reader: bufio.NewReader(file),
 	}, nil
 }
 
@@ -124,7 +129,10 @@ func (generator *FileGenerator) Generate() (*string, error) {
 }
 
 func (generator *FileGenerator) Close() error {
-	return generator.file.Close()
+	if generator.file != nil {
+		return generator.file.Close()
+	}
+	return nil
 }
 
 type UrlGenerator = Generator[string]
@@ -140,12 +148,12 @@ type RequestGenerator struct {
 	headers       []*Header
 }
 
-func NewJsonFileGenerator(path string) (Generator[map[string]interface{}], error) {
+func NewJsonFileGenerator(path string) (Generator[map[string]any], error) {
 	if generator, err := NewFileGenerator(path); err != nil {
 		return nil, err
 	} else {
-		return NewMapGenerator[string, map[string]interface{}](generator, func(b *string) (*map[string]interface{}, error) {
-			body := make(map[string]interface{})
+		return NewMapGenerator(generator, func(b *string) (*map[string]any, error) {
+			body := make(map[string]any)
 			if err := json.Unmarshal([]byte(*b), &body); err != nil {
 				return nil, err
 			}
@@ -154,11 +162,11 @@ func NewJsonFileGenerator(path string) (Generator[map[string]interface{}], error
 	}
 }
 
-func readFileJson(path string) (map[string]interface{}, error) {
+func readFileJson(path string) (map[string]any, error) {
 	if bytes, err := os.ReadFile(path); err != nil {
 		return nil, err
 	} else {
-		var body map[string]interface{}
+		var body map[string]any
 		if err := json.Unmarshal(bytes, &body); err != nil {
 			return nil, err
 		}
@@ -205,14 +213,19 @@ func NewRequestGenerator(config *RequestGeneratorConfig) (*RequestGenerator, err
 			return url, nil
 		})
 		if len(config.BodyPath) != 0 {
-			if body, err := os.ReadFile(config.BodyPath); err != nil {
+			var body []byte
+			var err error
+			if config.BodyPath == "-" {
+				if body, err = io.ReadAll(os.Stdin); err != nil {
+					return nil, err
+				}
+			} else if body, err = os.ReadFile(config.BodyPath); err != nil {
 				return nil, err
-			} else {
-				generator.bodyGenerator = NewSimpleGenerator(func() (*io.Reader, error) {
-					var reader io.Reader = bytes.NewReader(body)
-					return &reader, nil
-				})
 			}
+			generator.bodyGenerator = NewSimpleGenerator(func() (*io.Reader, error) {
+				var reader io.Reader = bytes.NewReader(body)
+				return &reader, nil
+			})
 		} else if len(config.BodiesPath) != 0 {
 			if len(config.ExtraJsonPath) != 0 {
 				bodyGenerator, err := NewJsonFileGenerator(config.BodiesPath)
@@ -222,14 +235,12 @@ func NewRequestGenerator(config *RequestGeneratorConfig) (*RequestGenerator, err
 				if extraJson, err := readFileJson(config.ExtraJsonPath); err != nil {
 					return nil, err
 				} else {
-					bodyGenerator = NewMapGenerator(bodyGenerator, func(r *map[string]interface{}) (*map[string]interface{}, error) {
-						for key, value := range extraJson {
-							(*r)[key] = value
-						}
+					bodyGenerator = NewMapGenerator(bodyGenerator, func(r *map[string]any) (*map[string]any, error) {
+						maps.Copy((*r), extraJson)
 						return r, nil
 					})
 				}
-				generator.bodyGenerator = NewMapGenerator(bodyGenerator, func(r *map[string]interface{}) (*io.Reader, error) {
+				generator.bodyGenerator = NewMapGenerator(bodyGenerator, func(r *map[string]any) (*io.Reader, error) {
 					if b, err := json.Marshal(*r); err != nil {
 						return nil, err
 					} else {
@@ -289,6 +300,9 @@ func (generator *RequestGenerator) Generate() (*Request, error) {
 	}
 	for _, header := range generator.headers {
 		request.Header.Add(header.Key, header.Value)
+	}
+	if body != nil && request.Header.Get("Content-Type") == "" {
+		request.Header.Set("Content-Type", "application/json")
 	}
 	return &Request{
 		ID:  generator.index,

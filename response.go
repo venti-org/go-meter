@@ -18,7 +18,7 @@ type Response struct {
 	ResponseMimeType string
 	Error            error
 	StatusCode       int
-	Body             interface{}
+	Body             any
 	BodyError        error
 	Cost             int64
 	ID               int
@@ -48,7 +48,7 @@ func NewResponse(request *Request, response *http.Response, err error) *Response
 				}
 			}
 		} else if mediatype == "application/json" {
-			result := make(map[string]interface{})
+			result := make(map[string]any)
 			if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 				res.BodyError = err
 			} else {
@@ -69,15 +69,15 @@ func NewResponse(request *Request, response *http.Response, err error) *Response
 	return res
 }
 
-func (res *Response) DefaultJson() map[string]interface{} {
-	result := make(map[string]interface{})
+func (res *Response) DefaultJson() map[string]any {
+	result := make(map[string]any)
 	result["url"] = res.RequestUrl
 	result["cost"] = res.Cost
 	result["id"] = res.ID
 	return result
 }
 
-func (res *Response) ErrorJson() (map[string]interface{}, error) {
+func (res *Response) ErrorJson() (map[string]any, error) {
 	if res.Error == nil {
 		return nil, fmt.Errorf("Response error is nil")
 	} else {
@@ -88,7 +88,7 @@ func (res *Response) ErrorJson() (map[string]interface{}, error) {
 	}
 }
 
-func (res *Response) SuccessJson() (map[string]interface{}, error) {
+func (res *Response) SuccessJson() (map[string]any, error) {
 	if res.Error != nil {
 		return nil, fmt.Errorf("Response error is not nil")
 	} else {
@@ -105,7 +105,7 @@ func (res *Response) SuccessJson() (map[string]interface{}, error) {
 }
 
 func (res *Response) String() string {
-	var result map[string]interface{}
+	var result map[string]any
 	var err error
 	if res.Error != nil {
 		result, err = res.ErrorJson()
